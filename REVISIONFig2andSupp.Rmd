@@ -1,0 +1,256 @@
+---
+title: "DepMap Analysis in ccRCC lines"
+author: "Katja Lamia"
+date: "2024-02-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rstatix)
+library(ggpubr)
+library(ggrepel)
+
+```
+
+
+```{r read in data}
+
+CellLineNamesDB <- read.csv("Model.csv") %>% select(1,4)
+
+DepMap_Kidney <- read.csv("CRISPR_(DepMap_Public_23Q4+Score,_Chronos)_subsetted.csv") %>% rename(ModelID = X) %>%
+  left_join(CellLineNamesDB) %>%
+  select(18,3:10) %>%
+  rename(CellLine = StrippedCellLineName)
+
+#Add column for labels
+DepMap_Kidney$cell_label <- NA
+
+#Define cell lines to label
+
+CellsList <- c("786O", "769P", "TUHR10TKB", "RCC10RGB", "UMRC3")
+
+DepMap_Kidney$cell_label[DepMap_Kidney$CellLine %in% CellsList] <- DepMap_Kidney$CellLine[DepMap_Kidney$CellLine %in% CellsList]
+
+
+```
+
+## DepMap effect on growth and survival
+
+```{r correlation plots for all kidney cell lines}
+pCORR1 <- ggplot(DepMap_Kidney, aes(EPAS1, ARNTL, label = cell_label))
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+lm_eqn <- function(DepMap_Kidney){
+    m <- lm(ARNTL ~ EPAS1, DepMap_Kidney);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+p1 <- pCORR1 + 
+  geom_point(color = "green", size = 2) + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE, color = "black") +
+  labs(y = "BMAL1 Dependency",
+       x = "EPAS1 Dependency") +
+  geom_text_repel() +
+  theme(text = element_text(size = 5)) +
+  ylim(-1.2,1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  theme_classic() + geom_text(x = -0.5, y = 0.9, label = lm_eqn(DepMap_Kidney), parse = TRUE)
+p1
+ggsave("BMAL1_Corr_Kidney.pdf", height = 2.5, width = 3.5, units = "in")
+
+pCORR2 <- ggplot(DepMap_Kidney, aes(EPAS1, ARNT, label = cell_label))
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+lm_eqn <- function(DepMap_Kidney){
+    m <- lm(ARNT ~ EPAS1, DepMap_Kidney);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+p2 <- pCORR2_eq <- pCORR2 +
+  geom_point(color="salmon", size = 2) + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE, color = "black") +
+  labs(y = "ARNT Dependency",
+       x = "EPAS1 Dependency") +
+  geom_text_repel() +
+  theme(text = element_text(size = 5)) +
+  ylim(-1.2,1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  theme_classic() + geom_text(x = -0.5, y = 0.9, label = lm_eqn(DepMap_Kidney), parse = TRUE)
+p2
+ggsave("ARNT_Corr_Kidney.pdf", height = 2.5, width = 3.5, units = "in")
+
+
+
+pCORR3 <- ggplot(DepMap_Kidney, aes(EPAS1, ARNT2))
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+lm_eqn <- function(DepMap_Kidney){
+    m <- lm(ARNT2 ~ EPAS1, DepMap_Kidney);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+p3 <- pCORR3_eq <- pCORR3 +
+  geom_point(color = "tan", size = 2) + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE, color = "black") +
+  labs(y = "ARNT2 Dependency",
+       x = "EPAS1 Dependency") +
+  ylim(-1.2,1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  theme_classic() + geom_text(x = -0.5, y = 0.9, label = lm_eqn(DepMap_Kidney), parse = TRUE)
+p3
+ggsave("ARNT2_Corr_Kidney.pdf", height = 2.5, width = 3.5, units = "in")
+
+
+
+pCORR4 <- ggplot(DepMap_Kidney, aes(EPAS1, ARNTL2))
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+lm_eqn <- function(DepMap_Kidney){
+    m <- lm(ARNTL2 ~ EPAS1, DepMap_Kidney);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+p4 <- pCORR4_eq <- pCORR4 +
+  geom_point(color = "turquoise", size = 2) + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE, color = "black") +
+  labs(y = "EPAS1 Dependency",
+       x = "BMAL2 Dependency") +
+  ylim(-1.2,1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  theme_classic() + geom_text(x = -0.5, y = 0.9, label = lm_eqn(DepMap_Kidney), parse = TRUE)
+p4
+ggsave("BMAL2_Corr_Kidney.pdf", height = 2.5, width = 3.5, units = "in")
+
+
+
+
+
+
+pCORR5 <- ggplot(DepMap_Kidney, aes(ARNT, ARNTL))
+# GET EQUATION AND R-SQUARED AS STRING
+# SOURCE: https://groups.google.com/forum/#!topic/ggplot2/1TgH-kG5XMA
+lm_eqn <- function(DepMap_Kidney){
+    m <- lm(ARNTL ~ ARNT, DepMap_Kidney);
+    eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+         list(a = format(unname(coef(m)[1]), digits = 2),
+              b = format(unname(coef(m)[2]), digits = 2),
+             r2 = format(summary(m)$r.squared, digits = 3)))
+    as.character(as.expression(eq));
+}
+p5 <- pCORR5_eq <- pCORR5 +
+  geom_point(color = "turquoise", size = 2) + 
+  geom_smooth(method=lm, se=FALSE, fullrange=TRUE, color = "black") +
+  labs(y = "ARNT Dependency",
+       x = "BMAL1 Dependency") +
+  ylim(-1.2,1) +
+  geom_hline(yintercept = 0, color = "gray") +
+  theme_classic() + geom_text(x = -0.5, y = 0.9, label = lm_eqn(DepMap_Kidney), parse = TRUE)
+p5
+ggsave("BMAL1_ARNT_Corr_Kidney.pdf", height = 2.5, width = 3.5, units = "in")
+
+```
+
+
+
+```{r statistics and create plots, echo=FALSE}
+
+ccRCC_CRISPR <- DepMap_Kidney %>% select(1:9) %>%
+  pivot_longer(!c(1), names_to = "Gene", values_to = "Effect_Chronos")
+
+ccRCC_CRISPRsub <- ccRCC_CRISPR %>% filter(Gene %in%
+                            c("HPRT1","ARNT","ARNT2","ARNTL","ARNTL2","EPAS1","HIF1A"))
+
+ttests <- t_test(data = ccRCC_CRISPRsub, ref.group = "HPRT1", p.adjust.method = "holm",
+                 paired = TRUE, formula = Effect_Chronos ~ Gene) %>% add_significance()
+anova <- aov(Effect_Chronos ~ Gene, data = ccRCC_CRISPRsub)
+tukey <- tukey_hsd(anova)
+
+tukey <- tukey_hsd(anova) %>% filter(group2 == "HPRT1") %>% add_significance()
+
+# Check for outliers
+outlier_test <- ccRCC_CRISPRsub %>% 
+  group_by(Gene) %>%
+  identify_outliers(Effect_Chronos)
+outlier_test
+
+# Build the linear model
+model  <- lm(Effect_Chronos ~ Gene, data = ccRCC_CRISPRsub)
+# Create a QQ plot of residuals
+ggqqplot(residuals(model))
+
+#check normality assumption by groups
+normcheck <- ccRCC_CRISPRsub %>%
+  group_by(Gene) %>%
+  shapiro_test(Effect_Chronos)
+normcheck
+
+
+ggqqplot(ccRCC_CRISPRsub, "Effect_Chronos", facet.by = "Gene")
+
+ccRCC_CRISPRsub %>% levene_test(Effect_Chronos ~ Gene)
+
+
+
+#Add column for labels
+ccRCC_CRISPRsub$cell_label <- NA
+
+#Define cell lines to label
+
+CellsList <- c("786O", "769P", "TUHR10TKB", "RCC10RGB")
+
+ccRCC_CRISPRsub$cell_label[ccRCC_CRISPRsub$CellLine %in% CellsList] <- ccRCC_CRISPRsub$CellLine[ccRCC_CRISPRsub$CellLine %in% CellsList]
+
+p1 <- ggplot(ccRCC_CRISPRsub, aes(factor(Gene), 
+                       Effect_Chronos, 
+                       color = Gene,
+                       label = cell_label))
+
+ColorPlot <- p1 + geom_boxplot(lwd=2) + theme_classic() +
+  scale_fill_brewer(palette="BuPu") +
+  stat_pvalue_manual(ttests, size = 4, x = "group2", label = "p.adj.signif",
+                     y.position = 1.2, tip.length = 0) +
+  geom_jitter(size=2) +
+  geom_text_repel() +
+  theme(text = element_text(size = 5)) +
+  geom_hline(yintercept = 0, lwd = 2, color = "gray") +
+              labs(title = "Dependencies from DepMap",
+                   subtitle = "ccRCC cell lines",
+                   x = "",
+                   y = "Gene Effect") 
+ColorPlot
+
+ggsave("bHLHColored.pdf", ColorPlot, width = 7.5, height = 6, units = "in")
+
+p2 <- ggplot(ccRCC_CRISPRsub, aes(factor(Gene), 
+                       Effect_Chronos))
+BWPlot <- p2 + geom_boxplot() + theme_classic() +
+  stat_pvalue_manual(ttests, size = 4, x = "group2", label = "p.adj.signif", y.position = 1.2, tip.length = 0) +
+  geom_jitter() +
+  geom_hline(yintercept = 0, color = "gray") +
+              labs(title = "Dependencies from DepMap",
+                   subtitle = "ccRCC cell lines",
+                   x = "",
+                   y = "Gene Effect") 
+BWPlot
+ggsave("bHLH_BW.pdf", BWPlot)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
