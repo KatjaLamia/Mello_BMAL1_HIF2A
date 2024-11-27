@@ -21,7 +21,7 @@ library(ggrepel)
 
 ```
 
-Rebecca downloaded the RNA sequencing data from the paper Chen et al. and aligned them to the mouse transcriptome. Katja ran DESEQ2 through GenePattern with sensitive vs resistant samples as the main factor and vehicle vs PT treatment as a confounding factor.
+We downloaded the RNA sequencing data from the paper Chen et al. and aligned them to the mouse transcriptome, then ran DESEQ2 through GenePattern with sensitive vs resistant samples as the main factor and vehicle vs PT treatment as a confounding factor.
 
 ```{r read in data for vehicle vs PT2399 DESEQ2 output for sensitive PDX samples only}
 
