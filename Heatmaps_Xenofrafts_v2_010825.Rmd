@@ -1,0 +1,278 @@
+---
+title: "Integration of RNAseq and CUT&RUN data from 786O cells"
+author: "Katja Lamia"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Analysis and presentation of RNA-seq data from 786O Xenograft Tumors
+
+Rebecca Mello implanted 786O cells in the flanks of NIH-III Nude mice to generate xenograft tumors. One week later, she began treating the mice with either vehicle or 10 mgs/kg PT2399 at either ZT0 or ZT12 three times weekly by oral gavage. She collected the tumors two weeks later, prepared total RNA and provided the samples to the Scripps Research Genomics Core Facility for library preparation and sequencing. Rebecca aligned the sequencing data to the human genome and performed DESeq2 to identify differentially expressed genes.
+
+```{r load packages, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(pheatmap)
+
+```
+
+```{r read in RNAseq expression data normalized counts, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+df <- read_delim("human_aligned.ZT12.vs.ZT0.normalized_counts.gct", skip=2)
+
+```
+
+```{r clean up data, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+df_tidy <- df %>% select(1,3:19) %>%
+    rename("Ctrl.ZT0.1" = "sample1_combined - linear total reads") %>%
+    rename("Ctrl.ZT0.2" = "sample2_combined - linear total reads") %>%
+    rename("Ctrl.ZT0.3" = "sample3_combined - linear total reads") %>%
+    rename("Ctrl.ZT0.4" = "sample4_combined - linear total reads") %>%
+    rename("Ctrl.ZT0.5" = "sample5_combined - linear total reads") %>%
+    rename("PT2399.ZT0.6" = "sample6_combined - linear total reads") %>%
+    rename("PT2399.ZT0.7" = "sample7_combined - linear total reads") %>%
+  rename("PT2399.ZT0.8" = "sample8_combined - linear total reads") %>%
+  rename("PT2399.ZT0.9" = "sample9_combined - linear total reads") %>%
+  rename("PT2399.ZT0.10" = "sample10_combined - linear total reads") %>%
+  rename("Ctrl.ZT12.11" = "sample11_combined - linear total reads") %>%
+  rename("Ctrl.ZT12.12" = "sample12_combined - linear total reads") %>%
+  rename("Ctrl.ZT12.13" = "sample13_combined - linear total reads") %>%
+  rename("Ctrl.ZT12.14" = "sample14_combined - linear total reads") %>%
+  rename("PT2399.ZT12.15" = "sample15_combined - linear total reads") %>%
+  rename("PT2399.ZT12.16" = "sample16_combined - linear total reads") %>%
+  rename("PT2399.ZT12.17" = "sample17_combined - linear total reads")
+  
+# Keep only data for transcripts with at least 10 reads per sample in at least three samples.
+
+smallestGroupSize <- 3
+
+keep <- rowSums(df_tidy >= 10) >= smallestGroupSize
+df_tidy <- df_tidy[keep,]
+
+#write_excel_csv(df_tidy, "BackgroundXenografts.xls")
+    
+```
+
+
+```{r import DEGs lists, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+PTvCtrl <- 
+  read_delim("human_aligned.PT2399.vs.VC.DESeq2_results_report.txt")
+
+PTvCtrl_ZT0 <-
+  read_delim("human_aligned_ZT0_only.PT2399.vs.VC.DESeq2_results_report.txt")
+
+PTvCtrl_ZT12 <-
+  read_delim("human_aligned_ZT12_only.PT2399.vs.VC.DESeq2_results_report.txt")
+
+ZT0vZT12 <-
+  read_delim("human_aligned.ZT12.vs.ZT0.DESeq2_results_report.txt")
+
+ThrP <- 0.05
+
+PTvCtrlsig <- PTvCtrl %>% filter(padj < ThrP)
+ZT0vZT12sig <- ZT0vZT12 %>% filter(padj < ThrP)
+PTvCtrlZT0sig <- PTvCtrl_ZT0 %>% filter(padj < ThrP)
+PTvCtrlZT12sig <- PTvCtrl_ZT12 %>% filter(padj < ThrP)
+
+```
+
+
+```{r calculate overlaps between ZT0 and ZT12 for PT DEGs}
+
+PTvCtrl_ZT0_ZT12olap <- PTvCtrlZT0sig %>%
+  filter(id %in% PTvCtrlZT12sig$id)
+
+```
+
+
+```{r filter and generate df for gene sets of interest, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+df_PTvCtrlsig <- df_tidy %>%
+  filter(Name %in% PTvCtrlsig$id)
+
+df_PTvCtrlZT0sig <- df_tidy %>%
+  filter(Name %in% PTvCtrlZT0sig$id)
+
+df_PTvCtrlZT12sig <- df_tidy %>%
+  filter(Name %in% PTvCtrlZT12sig$id)
+
+df_ZT0vZT12sig <- df_tidy %>%
+  filter(Name %in% ZT0vZT12sig$id)
+
+HYPOXIA <- colnames(read_delim("HallmarkHYPOXIA.gmt"))
+
+df_HYPOXIA <- df_tidy %>%
+  filter(Name %in% HYPOXIA) %>%
+  filter((Name %in% PTvCtrlZT0sig$id) | (Name %in% PTvCtrlZT12sig$id))
+
+GLYCOLYSIS <- colnames(read_delim("HALLMARK_GLYCOLYSIS.v2024.1.Hs.gmt"))
+
+df_GLYCOLYSIS <- df_tidy %>%
+  filter(Name %in% GLYCOLYSIS)
+
+GLYCOLYSIS <- colnames(read_delim("HALLMARK_GLYCOLYSIS.v2024.1.Hs.gmt"))
+
+df_GLYCOLYSIS <- df_tidy %>%
+  filter(Name %in% GLYCOLYSIS) %>%
+  filter((Name %in% PTvCtrlZT0sig$id) | (Name %in% PTvCtrlZT12sig$id))
+
+KEGG_ccRCC <- colnames(read_delim("KEGG_RENAL_CELL_CARCINOMA.v2024.1.Hs.gmt"))
+
+df_ccRCC <- df_tidy %>%
+  filter(Name %in% KEGG_ccRCC) %>%
+  filter((Name %in% PTvCtrlZT0sig$id) | (Name %in% PTvCtrlZT12sig$id))
+
+```
+
+```{r generate numbers only matrices for pheatmap, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+df_num_PTvCtrlsig <- as.matrix(df_PTvCtrlsig[,2:18])
+df_num_PTvCtrlZT0sig <- as.matrix(df_PTvCtrlZT0sig[,2:18])
+df_num_PTvCtrlZT12sig <- as.matrix(df_PTvCtrlZT12sig[,2:18])
+df_num_ZT0vZT12sig <- as.matrix(df_ZT0vZT12sig[,2:18])
+df_num_HYPOXIA <- as.matrix(df_HYPOXIA[,2:18])
+df_num_GLYCOLYSIS <- as.matrix(df_GLYCOLYSIS[,2:18])
+df_num_ccRCC <- as.matrix(df_ccRCC[,2:18])
+
+```
+
+```{r add row names, include=FALSE, echo=FALSE}
+
+#rownames(df_num_PTvCtrlsig) = df_PTvCtrlsig$Name
+#rownames(df_num_PTvCtrlZT0sig) = df_PTvCtrlZT0sig$Name
+#rownames(df_num_PTvCtrlZT12sig) = df_PTvCtrlZT12sig$Name
+#rownames(df_num_ZT0vZT12sig) = df_ZT0vZT12sig$Name
+rownames(df_num_HYPOXIA) = df_HYPOXIA$Name
+rownames(df_num_GLYCOLYSIS) = df_GLYCOLYSIS$Name
+rownames(df_num_ccRCC) = df_ccRCC$Name
+
+```
+
+```{r generate heatmaps, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+map_PT_DEGs <- pheatmap(df_num_PTvCtrlsig,
+                              scale = "row",
+                              cluster_cols = FALSE,
+                              cluster_rows = TRUE
+)
+
+map_PTZT0_DEGs <- pheatmap(df_num_PTvCtrlZT0sig,
+                              scale = "row",
+                              cluster_cols = FALSE,
+                              cluster_rows = TRUE
+)
+
+map_PTZT12_DEGs <- pheatmap(df_num_PTvCtrlZT12sig,
+                              scale = "row",
+                              cluster_cols = FALSE,
+                              cluster_rows = TRUE
+)
+
+map_ZT_DEGs <- pheatmap(df_num_ZT0vZT12sig,
+                              scale = "row",
+                              cluster_cols = FALSE,
+                              cluster_rows = TRUE
+)
+
+map_HYPOXIA <- pheatmap(df_num_HYPOXIA,
+                        scale = "row",
+                        cluster_cols = FALSE,
+                        cluster_rows = TRUE)
+
+map_GLYCOLYSIS <- pheatmap(df_num_GLYCOLYSIS,
+                        scale = "row",
+                        cluster_cols = FALSE,
+                        cluster_rows = TRUE)
+
+map_ccRCC <- pheatmap(df_num_ccRCC,
+                        scale = "row",
+                        cluster_cols = FALSE,
+                        cluster_rows = TRUE)
+
+
+```
+
+
+```{r define function to save heatmaps to png files, include=FALSE, echo=FALSE}
+
+save_pheatmap_png <- function(x, filename, width=400, height=1035, res = 150) {
+    png(filename, width = width, height = height, res = res)
+    grid::grid.newpage()
+    grid::grid.draw(x$gtable)
+    dev.off()
+}
+
+
+```
+
+```{r write heatmaps to files}
+
+save_pheatmap_png(map_PT_DEGs, "Xenografts_PT_DEGs.png")
+save_pheatmap_png(map_PTZT0_DEGs, "Xenografts_PTZT0_DEGs.png")
+save_pheatmap_png(map_PTZT12_DEGs, "Xenografts_PTZT12_DEGs.png")
+save_pheatmap_png(map_ZT_DEGs, "Xenografts_ZT_DEGs.png")
+save_pheatmap_png(map_HYPOXIA, "Xenografts_HYPOXIA.png")
+save_pheatmap_png(map_GLYCOLYSIS, "Xenografts_GLYCOLYSIS.png")
+save_pheatmap_png(map_ccRCC, "Xenografts_ccRCC.png")
+
+```
+
+
+```{r create boxplots for impact of PT2399 at ZT0 and ZT12}
+
+library(rstatix)
+
+PTvCtrlsigPlot_GroupedZT0 <- PTvCtrlsig %>% select(id) %>%
+  left_join(PTvCtrl_ZT0) %>% select(1,3) %>% drop_na()
+PTvCtrlsigPlot_GroupedZT0$ZT <- "ZT0"
+PTvCtrlsigPlot_GroupedZT0$Dir <- "NA"
+PTvCtrlsigPlot_GroupedZT0$Dir <- ifelse(PTvCtrlsigPlot_GroupedZT0$log2FoldChange < 0, "DOWN", PTvCtrlsigPlot_GroupedZT0$Dir)
+PTvCtrlsigPlot_GroupedZT0$Dir <- ifelse(PTvCtrlsigPlot_GroupedZT0$log2FoldChange > 0, "UP", PTvCtrlsigPlot_GroupedZT0$Dir)
+
+PTvCtrlsigPlot_GroupedZT12 <- PTvCtrlsig %>% select(id) %>%
+  left_join(PTvCtrl_ZT12) %>% select(1,3) %>% drop_na()
+PTvCtrlsigPlot_GroupedZT12$ZT <- "ZT12"
+PTvCtrlsigPlot_GroupedZT12$Dir <- "NA"
+PTvCtrlsigPlot_GroupedZT12$Dir <- ifelse(PTvCtrlsigPlot_GroupedZT12$log2FoldChange < 0, "DOWN", PTvCtrlsigPlot_GroupedZT12$Dir)
+PTvCtrlsigPlot_GroupedZT12$Dir <- ifelse(PTvCtrlsigPlot_GroupedZT12$log2FoldChange > 0, "UP", PTvCtrlsigPlot_GroupedZT12$Dir)
+
+PTvCtrlsigPlot_Grouped <- rbind(PTvCtrlsigPlot_GroupedZT0, PTvCtrlsigPlot_GroupedZT12)
+
+
+DEGsPT2399_TwoWayTukey_ZT <- aov(log2FoldChange ~ ZT * Dir,
+                         data = PTvCtrlsigPlot_Grouped) %>%
+  tukey_hsd() %>% add_significance()
+
+library(forcats)
+
+colors <- c("white", "gray")
+
+PlotData <- PTvCtrlsigPlot_Grouped %>%
+  mutate(ZT = fct_relevel(ZT, 
+            "ZT0", "ZT12"))
+
+ptest <- ggplot(PlotData, aes(x = Dir, y = log2FoldChange, fill = ZT))
+ptest + geom_boxplot(outlier.shape = NA) + scale_fill_manual(values = colors) + theme_classic() +
+  ylim(-3,3) +
+  labs(title = "Impact of PT2399 treatment at ZT0 and ZT12 in xenografts") +
+  theme(text = element_text(size = 10))
+ggsave("XenograftPT2399byZTboxplot.png", height = 2.5, width = 2.5, units = "in")
+```
+
