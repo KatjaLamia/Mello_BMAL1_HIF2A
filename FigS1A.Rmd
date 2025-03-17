@@ -1,0 +1,385 @@
+---
+title: "Comparing ccRCC Tumor to Normal Kidney in Public Datasets"
+author: "Katja Lamia"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(rstatix)
+
+```
+
+## Is the expression of bHLH-PAS family members altered in ccRCC?
+To address this question, we will analyze publicly available RNA-sequencing data from normal and tumor samples in the TCGA KIRC and the CPTAC datasets, downloaded from the GDC data portal (<https://portal.gdc.cancer.gov/>). 
+
+Note: Only ARNT was detected by mass spec in the CPTAC-3 project (See Clark et al., 2019 *Cell*, <https://pubmed.ncbi.nlm.nih.gov/31675502/>). ARNT protein was observed to be increased in ccRCC tumors compared to normal kidney.
+
+```{r load file paths and categorize into groups, include=FALSE}
+#setwd("~/Data/Downloaded Data Sets/CPTACandKIRC_111523")
+
+#First read in manifest that contains all file names.
+
+Manifest <- read_delim("CPTACandKIRC_111523/gdc_sample_sheet.2023-11-15.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+# Define groups of files for each project and category
+
+CPTAC_N <- Manifest %>%
+  filter(Project == "CPTAC-3", Type == "Solid Tissue Normal")
+
+CPTAC_T <- Manifest %>%
+  filter(Project == "CPTAC-3", Type == "Primary Tumor")
+
+KIRC_N <- Manifest %>%
+  filter(Project == "TCGA-KIRC", Type == "Solid Tissue Normal")
+
+KIRC_T <- Manifest %>%
+  filter(Project == "TCGA-KIRC", Type == "Primary Tumor")
+
+```
+
+This analysis includes `r nrow(CPTAC_N)` normal samples and `r nrow(CPTAC_T)` primary tumor samples from the CPTAC-3 project, and `r nrow(KIRC_N)` normal kidney samples and `r nrow(KIRC_T)` primary tumor samples from the TCGA KIRC project.
+
+```{r read in data from CPTAC normal kidneys, include=FALSE}
+
+GeneList <- c("ARNT", "ARNT2", "ARNTL", "ARNTL2")
+
+folder <- CPTAC_N$FileID[1]
+file <- CPTAC_N$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_CPTAC_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_CPTAC_N$source_file <- file
+  
+N <- nrow(CPTAC_N)
+  for(i in 2:N){
+    folder <- CPTAC_N$FileID[i]
+    file <- CPTAC_N$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_CPTAC_N <- Data_CPTAC_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_CPTAC_N_Sel <- Data_CPTAC_N %>% select(2,7)
+Data_CPTAC_N_Sel$Status <- "Normal"
+
+```
+
+
+```{r read in data from CPTAC tumors, include=FALSE}
+
+folder <- CPTAC_T$FileID[1]
+file <- CPTAC_T$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_CPTAC_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_CPTAC_T$source_file <- file
+  
+N <- nrow(CPTAC_T)
+  for(i in 2:N){
+    folder <- CPTAC_T$FileID[i]
+    file <- CPTAC_T$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_CPTAC_T <- Data_CPTAC_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_CPTAC_T_Sel <- Data_CPTAC_T %>% select(2,7)
+Data_CPTAC_T_Sel$Status <- "Tumor"
+
+```
+
+```{r combine normal and tumor tibbles for CPTAC, include=FALSE}
+
+List_Data_CPTAC3 <- rbind(Data_CPTAC_N_Sel, Data_CPTAC_T_Sel) %>%
+  rename("TPM" = tpm_unstranded)
+
+```
+
+```{r read in data from KIRC normal kidneys, include=FALSE}
+
+folder <- KIRC_N$FileID[1]
+file <- KIRC_N$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_KIRC_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_KIRC_N$source_file <- file
+  
+N <- nrow(KIRC_N)
+  for(i in 2:N){
+    folder <- KIRC_N$FileID[i]
+    file <- KIRC_N$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_KIRC_N <- Data_KIRC_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_KIRC_N_Sel <- Data_KIRC_N %>% select(2,7)
+Data_KIRC_N_Sel$Status <- "Normal"
+
+```
+
+
+```{r read in data from KIRC tumors, include=FALSE}
+
+folder <- KIRC_T$FileID[1]
+file <- KIRC_T$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_KIRC_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_KIRC_T$source_file <- file
+  
+N <- nrow(KIRC_T)
+  for(i in 2:N){
+    folder <- KIRC_T$FileID[i]
+    file <- KIRC_T$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_KIRC_T <- Data_KIRC_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_KIRC_T_Sel <- Data_KIRC_T %>% select(2,7)
+Data_KIRC_T_Sel$Status <- "Tumor"
+
+```
+
+```{r combine normal and tumor tibbles for KIRC, include=FALSE}
+
+List_Data_KIRC <- rbind(Data_KIRC_N_Sel, Data_KIRC_T_Sel) %>%
+  rename("TPM" = tpm_unstranded)
+
+```
+
+```{r combine all expression data, include=FALSE}
+
+List_Data_CPTAC3$Project <- "CPTAC-3"
+List_Data_KIRC$Project <- "TCGA_KIRC"
+
+List_Data_combined <- rbind(List_Data_CPTAC3, List_Data_KIRC)
+
+ARNT_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNT")
+ARNT2_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNT2")
+BMAL1_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNTL")
+BMAL2_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNTL2")
+
+```
+
+```{r run t-tests and create boxplots}
+
+#ARNT
+stat.test1 <- ARNT_Combined %>% group_by(Project) %>%
+    t_test(TPM ~ Status) %>%
+    add_significance()
+
+bxp1 <- ggboxplot(
+    ARNT_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("black", "red"),
+    width = 0.7,
+    ggtheme = theme_classic(),
+    xlab = ""
+)
+
+# Add p-value and significance levels
+stat.test1 <- stat.test1 %>% add_xy_position(x = "Project")
+bxp1 + 
+    stat_pvalue_manual(stat.test1, size = 4, tip.length = 0) +
+    labs(y = expression(~italic(ARNT)~" (TPM)"))
+
+
+#ARNT2
+stat.test2 <- ARNT2_Combined %>% group_by(Project) %>%
+    t_test(TPM ~ Status) %>%
+    add_significance()
+
+bxp2 <- ggboxplot(
+    ARNT2_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("black", "red"),
+    xlab = ""
+)
+
+# Add p-value and significance levels
+stat.test2 <- stat.test2 %>% add_xy_position(x = "Project")
+bxp2 + 
+    stat_pvalue_manual(stat.test2, size = 8, tip.length = 0) +
+    labs(y = expression(~italic(ARNT2)~" (TPM)"))
+
+#BMAL1
+stat.test3 <- BMAL1_Combined %>% group_by(Project) %>%
+    t_test(TPM ~ Status) %>%
+    add_significance()
+
+bxp3 <- ggboxplot(
+    BMAL1_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("black", "red"),
+    xlab = ""
+)
+
+# Add p-value and significance levels
+stat.test3 <- stat.test3 %>% add_xy_position(x = "Project")
+bxp3 + 
+    stat_pvalue_manual(stat.test3, size = 8, tip.length = 0) +
+    labs(y = expression(~italic(BMAL1)~" (TPM)"))
+
+#BMAL2
+stat.test4 <- BMAL2_Combined %>% group_by(Project) %>%
+    t_test(TPM ~ Status) %>%
+    add_significance()
+
+bxp4 <- ggboxplot(
+    BMAL2_Combined, x = "Project", y = "TPM",
+    fill = "Status", palette =c("black", "red"),
+    xlab = ""
+)
+
+# Add p-value and significance levels
+stat.test4 <- stat.test4 %>% add_xy_position(x = "Project")
+bxp4 + 
+    stat_pvalue_manual(stat.test4, size = 8, tip.length = 0) +
+    labs(y = expression(~italic(BMAL2)~" (TPM)"))
+
+```
+

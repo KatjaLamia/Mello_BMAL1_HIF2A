@@ -1,0 +1,203 @@
+---
+title: "Prepare files to measure circadian 'correlation' in normal and tumor samples"
+author: "Katja Lamia"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(deltaccd)
+
+```
+
+## Is clock correlation altered in tumors of diverse types?
+To address this question, we will analyze publicly available RNA-sequencing data from normal and tumor samples in TCGA datasets, downloaded from the GDC data portal (<https://portal.gdc.cancer.gov/>). 
+
+This script is used to generate data matrices to be uploaded to calculate clock correlation distances and generate heatmaps at (<https://hugheylab.shinyapps.io/deltaccd/>). This code shows an example for the TCGA-BRCA project. The project folder names for reading in data associated with each project should be defined in the chunk below with folder names associated with data downloaded from the GDC portal.
+
+```{r define variables to run}
+
+ProjFolder <- "TCGA.BRCA"
+SamplesFile <- "gdc_sample_sheet.2023-12-08.tsv"
+DataFolder <- "gdc_download_20231208_183039.655212"
+
+```
+
+
+```{r load file paths and categorize into groups, include=FALSE}
+
+SampleList <- read_delim(str_glue("{ProjFolder}/{SamplesFile}")) %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+# Define groups
+
+Samples_N <- SampleList %>%
+  filter(Type == "Solid Tissue Normal")
+
+Samples_T <- SampleList %>%
+  filter(Type == "Primary Tumor")
+
+```
+
+This analysis includes `r nrow(Samples_N)` normal tissue samples and `r nrow(Samples_T)` matched primary tumor samples from the `r Samples_T$Project[1]` project. (Matched means the tumor samples are from cases for which normal samples are also included in these data - i.e., collected from the same patients).
+
+```{r define genes of interest}
+
+GeneList <- c("ARNTL","NPAS2","CLOCK","CRY1","CRY2","NR1D1","NR1D2","PER1","PER2","PER3","DBP","TEF")
+
+```
+
+
+```{r read in data from normal samples, include=FALSE}
+
+folder <- Samples_N$FileID[1]
+file <- Samples_N$Filename[1]
+f_path <- str_glue("{ProjFolder}/{DataFolder}/{folder}/{file}")
+
+Data_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_N$source_file <- file
+  
+N <- nrow(Samples_N)
+  for(i in 2:N){
+    folder <- Samples_N$FileID[i]
+    file <- Samples_N$Filename[i]
+    f_path <- str_glue("{ProjFolder}/{DataFolder}/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_N <- Data_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_N_Sel <- Data_N %>% select(2,7,10) %>% rename("TPM" = tpm_unstranded)
+Data_N_Sel$Status <- "Normal"
+
+```
+
+
+```{r read in data from tumors, include=FALSE}
+
+folder <- Samples_T$FileID[1]
+file <- Samples_T$Filename[1]
+f_path <- str_glue("{ProjFolder}/{DataFolder}/{folder}/{file}")
+
+Data_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_T$source_file <- file
+  
+N <- nrow(Samples_T)
+  for(i in 2:N){
+    folder <- Samples_T$FileID[i]
+    file <- Samples_T$Filename[i]
+    f_path <- str_glue("{ProjFolder}/{DataFolder}/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_T <- Data_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_T_Sel <- Data_T %>% select(2,7,10) %>% rename("TPM" = tpm_unstranded)
+Data_T_Sel$Status <- "Tumor"
+
+```
+
+
+```{r generate matrix for deltaCCD and write to a csv file}
+
+library(reshape)
+library(reshape2)
+
+emat_N <- Data_N_Sel %>% 
+  select(3,1,2) %>%
+  cast(source_file~gene_name)
+
+emat_N$condition <-"non-tumor"
+
+emat_N <- emat_N  %>% select(1,14,2:13)
+
+emat_T <- Data_T_Sel %>% 
+  select(3,1,2) %>%
+  cast(source_file~gene_name)
+
+emat_T$condition <-"tumor"
+
+emat_T <- emat_T  %>% select(1,14,2:13)
+
+emat <- rbind(emat_N, emat_T)
+
+Project <- Samples_T$Project[1]
+write_csv(emat, str_glue("{Project}","ematUNmatched.csv"))
+  
+```
+
+
+

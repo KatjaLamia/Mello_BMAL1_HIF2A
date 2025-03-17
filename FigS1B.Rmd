@@ -1,0 +1,812 @@
+---
+title: "Comparing bHLH-PAS family expression in tumor and normal samples in TCGA"
+author: "Katja Lamia"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(rstatix)
+
+```
+
+## Is the expression of bHLH-PAS family members altered differently in different cancers?
+To address this question, we will analyze publicly available RNA-sequencing data from normal and tumor samples in TCGA datasets, downloaded from the GDC data portal (<https://portal.gdc.cancer.gov/>).
+
+```{r load file paths and categorize into groups, include=FALSE}
+
+#setwd("~/LocalData")
+
+SampleList <- read_delim("TCGA.COAD/gdc_sample_sheet.2023-12-06.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+Temp <- read_delim("TCGA.BRCA/gdc_sample_sheet.2023-12-08.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+SampleList <- rbind(SampleList, Temp)
+
+Temp <- read_delim("TCGA.LUAD/gdc_sample_sheet.2023-12-07.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+SampleList <- rbind(SampleList, Temp)
+
+Temp <- read_delim("CPTACandKIRC_111523/gdc_sample_sheet.2023-11-15.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+SampleList <- rbind(SampleList, Temp)
+
+Temp <- read_delim("TCGA.KIRP/gdc_sample_sheet.2023-12-13.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+SampleList <- rbind(SampleList, Temp)
+
+Temp <- read_delim("TCGA.KIRP/gdc_sample_sheet.2023-12-13.tsv") %>%
+  select(1,2,5:8) %>%
+  rename("FileID" = `File ID`,
+         "Filename" = `File Name`,
+         "Project" = `Project ID`,
+         "Case" = `Case ID`,
+         "Sample" = `Sample ID`,
+         "Type" = `Sample Type`)
+
+SampleList <- rbind(SampleList, Temp)
+
+
+# Define groups
+
+COAD_N <- SampleList %>%
+  filter(Project == "TCGA-COAD", Type == "Solid Tissue Normal")
+
+COAD_T <- SampleList %>%
+  filter(Project == "TCGA-COAD", Type == "Primary Tumor") %>%
+  filter(Case %in% COAD_N$Case)
+
+BRCA_N <- SampleList %>%
+  filter(Project == "TCGA-BRCA", Type == "Solid Tissue Normal")
+
+BRCA_T <- SampleList %>%
+  filter(Project == "TCGA-BRCA", Type == "Primary Tumor") %>%
+  filter(Case %in% BRCA_N$Case)
+
+LUAD_N <- SampleList %>%
+  filter(Project == "TCGA-LUAD", Type == "Solid Tissue Normal")
+
+LUAD_T <- SampleList %>%
+  filter(Project == "TCGA-LUAD", Type == "Primary Tumor") %>%
+  filter(Case %in% LUAD_N$Case)
+
+RCC_N <- SampleList %>%
+  filter(Project == "TCGA-KIRC", Type == "Solid Tissue Normal")
+
+RCC_T <- SampleList %>%
+  filter(Project == "TCGA-KIRC", Type == "Primary Tumor") %>%
+  filter(Case %in% RCC_N$Case)
+
+KIRP_N <- SampleList %>%
+  filter(Project == "TCGA-KIRP", Type == "Solid Tissue Normal")
+
+KIRP_T <- SampleList %>%
+  filter(Project == "TCGA-KIRP", Type == "Primary Tumor") %>%
+  filter(Case %in% KIRP_N$Case)
+
+```
+
+This analysis includes `r nrow(COAD_N)` normal colon samples and `r nrow(COAD_T)` matched primary tumor samples from the TCGA-COAD project, `r nrow(LUAD_N)` normal lung samples and `r nrow(LUAD_T)` matched primary tumor samples from the TCGA-LUAD project, and `r nrow(BRCA_N)` normal breast samples and `r nrow(BRCA_T)` matched primary tumor samples from the TCGA-BRCA project and `r nrow(RCC_N)` normal kidney samples and `r nrow(RCC_T)` matched primary tumor samples from the TCGA-KIRC project. (Matched means the tumor samples are from cases for which normal samples are also included in these data - i.e., collected from the same patients).
+
+```{r define genes of interest}
+
+GeneList <- c("ARNT", "ARNT2", "ARNTL", "ARNTL2")
+
+```
+
+
+```{r read in data from COAD normal kidneys, include=FALSE}
+
+folder <- COAD_N$FileID[1]
+file <- COAD_N$Filename[1]
+f_path <- str_glue("TCGA.COAD/gdc_download_20231206_221253.049907/{folder}/{file}")
+
+Data_COAD_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_COAD_N$source_file <- file
+  
+N <- nrow(COAD_N)
+  for(i in 2:N){
+    folder <- COAD_N$FileID[i]
+    file <- COAD_N$Filename[i]
+    f_path <- str_glue("TCGA.COAD/gdc_download_20231206_221253.049907/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_COAD_N <- Data_COAD_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_COAD_N_Sel <- Data_COAD_N %>% select(2,7)
+Data_COAD_N_Sel$Status <- "Normal"
+Data_COAD_N_Sel$Project <- "COAD"
+
+```
+
+
+```{r read in data from COAD tumors, include=FALSE}
+
+folder <- COAD_T$FileID[1]
+file <- COAD_T$Filename[1]
+f_path <- str_glue("TCGA.COAD/gdc_download_20231206_221253.049907/{folder}/{file}")
+
+Data_COAD_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_COAD_T$source_file <- file
+  
+N <- nrow(COAD_T)
+  for(i in 2:N){
+    folder <- COAD_T$FileID[i]
+    file <- COAD_T$Filename[i]
+    f_path <- str_glue("TCGA.COAD/gdc_download_20231206_221253.049907/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_COAD_T <- Data_COAD_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_COAD_T_Sel <- Data_COAD_T %>% select(2,7)
+Data_COAD_T_Sel$Status <- "Tumor"
+Data_COAD_T_Sel$Project <- "COAD"
+
+```
+
+
+```{r read in data from LUAD normal lung samples, include=FALSE}
+
+folder <- LUAD_N$FileID[1]
+file <- LUAD_N$Filename[1]
+f_path <- str_glue("TCGA.LUAD/gdc_download_20231208_011442.939212/{folder}/{file}")
+
+Data_LUAD_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_LUAD_N$source_file <- file
+  
+N <- nrow(LUAD_N)
+  for(i in 2:N){
+    folder <- LUAD_N$FileID[i]
+    file <- LUAD_N$Filename[i]
+    f_path <- str_glue("TCGA.LUAD/gdc_download_20231208_011442.939212/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_LUAD_N <- Data_LUAD_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_LUAD_N_Sel <- Data_LUAD_N %>% select(2,7)
+Data_LUAD_N_Sel$Status <- "Normal"
+Data_LUAD_N_Sel$Project <- "LUAD"
+
+```
+
+
+```{r read in data from LUAD tumors, include=FALSE}
+
+folder <- LUAD_T$FileID[1]
+file <- LUAD_T$Filename[1]
+f_path <- str_glue("TCGA.LUAD/gdc_download_20231208_011442.939212/{folder}/{file}")
+
+Data_LUAD_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_LUAD_T$source_file <- file
+  
+N <- nrow(LUAD_T)
+  for(i in 2:N){
+    folder <- LUAD_T$FileID[i]
+    file <- LUAD_T$Filename[i]
+    f_path <- str_glue("TCGA.LUAD/gdc_download_20231208_011442.939212/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_LUAD_T <- Data_LUAD_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_LUAD_T_Sel <- Data_LUAD_T %>% select(2,7)
+Data_LUAD_T_Sel$Status <- "Tumor"
+Data_LUAD_T_Sel$Project <- "LUAD"
+
+```
+
+```{r read in data from BRCA normal breast samples, include=FALSE}
+
+folder <- BRCA_N$FileID[1]
+file <- BRCA_N$Filename[1]
+f_path <- str_glue("TCGA.BRCA/gdc_download_20231208_183039.655212/{folder}/{file}")
+
+Data_BRCA_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_BRCA_N$source_file <- file
+  
+N <- nrow(BRCA_N)
+  for(i in 2:N){
+    folder <- BRCA_N$FileID[i]
+    file <- BRCA_N$Filename[i]
+    f_path <- str_glue("TCGA.BRCA/gdc_download_20231208_183039.655212/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_BRCA_N <- Data_BRCA_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_BRCA_N_Sel <- Data_BRCA_N %>% select(2,7)
+Data_BRCA_N_Sel$Status <- "Normal"
+Data_BRCA_N_Sel$Project <- "BRCA"
+
+```
+
+
+```{r read in data from BRCA tumors, include=FALSE}
+
+folder <- BRCA_T$FileID[1]
+file <- BRCA_T$Filename[1]
+f_path <- str_glue("TCGA.BRCA/gdc_download_20231208_183039.655212/{folder}/{file}")
+
+Data_BRCA_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_BRCA_T$source_file <- file
+  
+N <- nrow(BRCA_T)
+  for(i in 2:N){
+    folder <- BRCA_T$FileID[i]
+    file <- BRCA_T$Filename[i]
+    f_path <- str_glue("TCGA.BRCA/gdc_download_20231208_183039.655212/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_BRCA_T <- Data_BRCA_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_BRCA_T_Sel <- Data_BRCA_T %>% select(2,7)
+Data_BRCA_T_Sel$Status <- "Tumor"
+Data_BRCA_T_Sel$Project <- "BRCA"
+
+```
+
+```{r read in data from RCC normal kidney samples, include=FALSE}
+
+folder <- RCC_N$FileID[1]
+file <- RCC_N$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_RCC_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_RCC_N$source_file <- file
+  
+N <- nrow(RCC_N)
+  for(i in 2:N){
+    folder <- RCC_N$FileID[i]
+    file <- RCC_N$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_RCC_N <- Data_RCC_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_RCC_N_Sel <- Data_RCC_N %>% select(2,7)
+Data_RCC_N_Sel$Status <- "Normal"
+Data_RCC_N_Sel$Project <- "RCC"
+
+```
+
+
+```{r read in data from RCC tumors, include=FALSE}
+
+folder <- RCC_T$FileID[1]
+file <- RCC_T$Filename[1]
+f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+
+Data_RCC_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_RCC_T$source_file <- file
+  
+N <- nrow(RCC_T)
+  for(i in 2:N){
+    folder <- RCC_T$FileID[i]
+    file <- RCC_T$Filename[i]
+    f_path <- str_glue("CPTACandKIRC_111523/gdc_download_20231116_002116.005776/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_RCC_T <- Data_RCC_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_RCC_T_Sel <- Data_RCC_T %>% select(2,7)
+Data_RCC_T_Sel$Status <- "Tumor"
+Data_RCC_T_Sel$Project <- "RCC"
+
+```
+
+```{r read in data from KIRP normal kidney samples, include=FALSE}
+
+folder <- KIRP_N$FileID[1]
+file <- KIRP_N$Filename[1]
+f_path <- str_glue("TCGA.KIRP/gdc_download_20231213_230449.291306/{folder}/{file}")
+
+Data_KIRP_N <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_KIRP_N$source_file <- file
+  
+N <- nrow(KIRP_N)
+  for(i in 2:N){
+    folder <- KIRP_N$FileID[i]
+    file <- KIRP_N$Filename[i]
+    f_path <- str_glue("TCGA.KIRP/gdc_download_20231213_230449.291306/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_KIRP_N <- Data_KIRP_N %>%
+      rbind(Data_Temp)
+    }
+
+Data_KIRP_N_Sel <- Data_KIRP_N %>% select(2,7)
+Data_KIRP_N_Sel$Status <- "Normal"
+Data_KIRP_N_Sel$Project <- "KIRP"
+
+```
+
+
+```{r read in data from KIRP tumors, include=FALSE}
+
+folder <- KIRP_T$FileID[1]
+file <- KIRP_T$Filename[1]
+f_path <- str_glue("TCGA.KIRP/gdc_download_20231213_230449.291306/{folder}/{file}")
+
+Data_KIRP_T <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+
+Data_KIRP_T$source_file <- file
+  
+N <- nrow(KIRP_T)
+  for(i in 2:N){
+    folder <- KIRP_T$FileID[i]
+    file <- KIRP_T$Filename[i]
+    f_path <- str_glue("TCGA.KIRP/gdc_download_20231213_230449.291306/{folder}/{file}")
+    Data_Temp <- read_delim(f_path,
+                           skip = 6,
+                           col_names = c(
+                             "gene_id",
+                             "gene_name",
+                             "gene_type",
+                             "unstranded",
+                             "stranded_first",
+                             "stranded_second",
+                             "tpm_unstranded",
+                             "fpkm_unstranded",
+                             "fpkm_uq_unstranded")
+                           ) %>%
+  filter(gene_name %in% GeneList)
+    
+    Data_Temp$source_file <- file
+
+    Data_KIRP_T <- Data_KIRP_T %>%
+      rbind(Data_Temp)
+    }
+
+Data_KIRP_T_Sel <- Data_KIRP_T %>% select(2,7)
+Data_KIRP_T_Sel$Status <- "Tumor"
+Data_KIRP_T_Sel$Project <- "KIRP"
+
+```
+
+```{r combine tibbles, include=FALSE}
+
+List_Data_combined <- rbind(Data_COAD_N_Sel,
+                   Data_COAD_T_Sel,
+                   Data_LUAD_N_Sel,
+                   Data_LUAD_T_Sel,
+                   Data_BRCA_N_Sel,
+                   Data_BRCA_T_Sel,
+                   Data_RCC_N_Sel,
+                   Data_RCC_T_Sel,
+                   Data_KIRP_N_Sel,
+                   Data_KIRP_T_Sel) %>%
+  rename("TPM" = tpm_unstranded)
+
+```
+
+
+```{r create tibble for each gene of interest, include=FALSE}
+ARNT_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNT")
+ARNT2_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNT2")
+BMAL1_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNTL")
+BMAL2_Combined <- List_Data_combined %>%
+  filter(gene_name == "ARNTL2")
+
+```
+
+```{r two way ANOVAs}
+# use two-way ANOVA
+
+ARNT_Grouped <- ARNT_Combined %>% group_by(Project, Status)
+A_TwoWayTukeyTCGA_expression <- aov(TPM ~ Status*Project,
+                         data = ARNT_Grouped) %>%
+  tukey_hsd() %>% add_significance()
+A_TwoWayTukeyTCGA_expression %>% select(group1, group2, p.adj, p.adj.signif) %>%
+  filter(grepl("Normal", group1))
+
+ARNT2_Grouped <- ARNT2_Combined %>% group_by(Project, Status)
+A2_TwoWayTukeyTCGA_expression <- aov(TPM ~ Status*Project,
+                         data = ARNT2_Grouped) %>%
+  tukey_hsd() %>% add_significance()
+A2_TwoWayTukeyTCGA_expression %>% select(group1, group2, p.adj, p.adj.signif) %>%
+  filter(grepl("Normal", group1))
+
+BMAL1_Grouped <- BMAL1_Combined %>% group_by(Project, Status)
+B1_TwoWayTukeyTCGA_expression <- aov(TPM ~ Status*Project,
+                         data = BMAL1_Grouped) %>%
+  tukey_hsd() %>% add_significance()
+B1_TwoWayTukeyTCGA_expression %>% select(group1, group2, p.adj, p.adj.signif) %>%
+  filter(grepl("Normal", group1))
+
+BMAL2_Grouped <- BMAL2_Combined %>% group_by(Project, Status)
+B2_TwoWayTukeyTCGA_expression <- aov(TPM ~ Status*Project,
+                         data = BMAL2_Grouped) %>%
+  tukey_hsd() %>% add_significance()
+B2_TwoWayTukeyTCGA_expression %>% select(group1, group2, p.adj, p.adj.signif) %>%
+  filter(grepl("Normal", group1))
+
+
+```
+
+
+```{r create boxplots}
+#ARNT
+bxp1 <- ggboxplot(
+    ARNT_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("gray", "red"),
+    width = 0.7,
+    ggtheme = theme_classic(),
+    xlab = ""
+)
+
+bxp1 + labs(y = expression(~italic(ARNT)~" (TPM)"))
+ggsave("ARNTmatchedbxp.pdf")
+
+#ARNT2
+bxp2 <- ggboxplot(
+    ARNT2_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("gray", "red"),
+    width = 0.7,
+    ggtheme = theme_classic(),
+    xlab = ""
+)
+
+bxp2 + labs(y = expression(~italic(ARNT2)~" (TPM)"))
+ggsave("ARNT2matchedbxp.pdf")
+
+#BMAL1
+bxp3 <- ggboxplot(
+    BMAL1_Combined, x = "Project", y = "TPM", 
+    fill = "Status", palette =c("gray", "red"),
+    width = 0.7,
+    ggtheme = theme_classic(),
+    xlab = ""
+)
+
+bxp3 + labs(y = expression(~italic(BMAL1)~" (TPM)"))
+ggsave("BMAL1matchedbxp.pdf")
+
+#BMAL2
+bxp4 <- ggboxplot(
+    BMAL2_Combined, x = "Project", y = "TPM",
+    fill = "Status", palette =c("gray", "red"),
+    width = 0.7,
+    ggtheme = theme_classic(),
+    xlab = ""
+)
+
+bxp4 + labs(y = expression(~italic(BMAL2)~" (TPM)"))
+ggsave("BMAL2matchedbxp.pdf")
+
+```
+
