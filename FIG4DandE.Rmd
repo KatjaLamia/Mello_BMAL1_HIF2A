@@ -1,0 +1,185 @@
+---
+title: "Cell Culture RNAseq Round 3 Heatmaps"
+author: "Katja Lamia"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Gene Expression in ccRCC Cell Lines
+
+Rebecca Mello generated ccRCC cell lines (786O and A498) in which ARNT or BMAL1 is depleted by shRNA. Here, we generate heat maps from the shControl, shARNT and shBMAL1 datasets from 786O cells.
+
+```{r load packages}
+library(tidyverse)
+library(dplyr)
+library(pheatmap)
+
+```
+
+```{r read in data}
+
+df786O <- read_delim("MelloRNAseq/786O_DESEQ2.KO.vs.WT.normalized_counts.csv") %>% 
+  select(1,11:13,2:7) %>% na.omit()
+
+```
+
+```{r clean up data}
+
+df_tidy <- df786O %>% 
+    rename("shCtrl_1" = "786O_shCNT_1 - linear total reads") %>%
+    rename("shCtrl_2" = "786O_shCNT_2 - linear total reads") %>%
+    rename("shCtrl_3" = "786O_shCNT_3 - linear total reads") %>%
+    rename("shARNT_1" = "786O_shARNT_1 - linear total reads") %>%
+    rename("shARNT_2" = "786O_shARNT_2 - linear total reads") %>%
+    rename("shARNT_3" = "786O_shARNT_3 - linear total reads") %>%
+    rename("shBMAL1_1" = "786O_shBMAL1_1 - linear total reads") %>%
+    rename("shBMAL1_2" = "786O_shBMAL1_2 - linear total reads") %>%
+    rename("shBMAL1_3" = "786O_shBMAL1_3 - linear total reads")
+
+# Keep only data for transcripts with at least 10 reads per sample in at least three samples.
+
+smallestGroupSize <- 3
+
+keep <- rowSums(df_tidy >= 10) >= smallestGroupSize
+df_tidy <- df_tidy[keep,]
+
+write_excel_csv(df_tidy, "Background786O.xls")
+
+```
+
+```{r extract gene sets of interest}
+
+
+# HYPOXIA target genes from MSigDB
+
+HYPOXIA <- colnames(read_delim("HALLMARK_HYPOXIA.v2023.1.Hs.gmt"))
+
+df_HYPOXIA <- df_tidy %>% filter (Name %in% HYPOXIA)
+
+# Significantly changed genes for each sh condition from DESEQ2
+
+Set_padj <- 0.05
+
+Sig786O_ARNT <- read_delim("MelloRNAseq/786O_shARNT_results.csv") %>% 
+  rename("id" = "...1") %>% 
+  filter(padj < Set_padj)
+Sig786O_shARNT_UP <- Sig786O_ARNT %>% filter(log2FoldChange > 0)
+Sig786O_shARNT_DN <- Sig786O_ARNT %>% filter(log2FoldChange < 0)
+
+Sig786O_BMAL1 <- read_delim("MelloRNAseq/786O_shBMAL1_results.csv") %>% 
+  rename("id" = "...1") %>% 
+  filter(padj < Set_padj)
+Sig786O_shBMAL1_UP <- Sig786O_BMAL1 %>% filter(log2FoldChange > 0)
+Sig786O_shBMAL1_DN <- Sig786O_BMAL1 %>% filter(log2FoldChange < 0)
+
+Sig786O <- Sig786O_ARNT %>% 
+  rbind(Sig786O_BMAL1) %>% 
+  select(id) %>% 
+  unique()
+
+Sig786O_DN <- Sig786O_shARNT_DN %>%
+  rbind(Sig786O_shBMAL1_DN) %>%
+  select(id) %>%
+  unique()
+
+```
+
+```{r filter and generate df for gene sets of interest }
+
+df_Sig <- df_tidy %>% filter(Name %in% Sig786O$id)
+
+df_SigHYPOXIA <- df_HYPOXIA %>% 
+  filter(Name %in% Sig786O$id)
+
+df_SigDN <- df_tidy %>% filter(Name %in% Sig786O_DN$id)
+
+df_SigH_DN <- df_HYPOXIA %>%
+  filter(Name %in% Sig786O_DN$id)
+```
+
+```{r write files for data included in heatmaps}
+
+write_csv(df_SigDN, "DataFigure3D.csv")
+write_csv(df_SigH_DN, "DataFigure3E.csv")
+
+```
+
+
+
+```{r generate numbers only matrices for pheatmap}
+
+# DEGs
+
+df_numSig <- as.matrix(df_Sig[,2:10])
+df_numSigDN <- as.matrix(df_SigDN[,2:10])
+
+# HYPOXIA gene set members that are significantly altered
+
+df_numSigH <- as.matrix(df_SigHYPOXIA[,2:10])
+df_numSigH_DN <- as.matrix(df_SigH_DN[,2:10])
+
+```
+
+```{r add row names if desired}
+
+# DEGs
+
+#rownames(df_numSig) = df_Sig$Name
+#rownames(df_numSigDN) = df_SigDN$Name
+
+#HYPOXIA
+
+#rownames(df_numSigH) = df_SigHYPOXIA$Name
+#rownames(df_numA498H) = df_SigH_DN$Name
+
+#rownames(df_num786OHSig) = df_786O_SigHYPOXIA$Name
+#rownames(df_numSigH_DN) = df_A498_SigHYPOXIA$Name
+
+```
+
+```{r generate heatmaps}
+
+map_DEGs <- pheatmap(df_numSig, scale = "row",
+                        cluster_cols = FALSE,
+                        cluster_rows = TRUE
+                        )
+
+map_HSig <- pheatmap(df_numSigH, scale = "row",
+         cluster_cols = FALSE,
+         cluster_rows = TRUE
+         )
+
+map_SigDN <- pheatmap(df_numSigDN, scale = "row",
+         cluster_cols = FALSE,
+         cluster_rows = TRUE
+         )
+
+map_HSigDN <- pheatmap(df_numSigH_DN, scale = "row",
+         cluster_cols = FALSE,
+         cluster_rows = TRUE
+         )
+
+```
+
+```{r define function to save heatmaps to png files}
+save_pheatmap_png <- function(x, filename, width=400, height=1035, res = 150) {
+    png(filename, width = width, height = height, res = res)
+    grid::grid.newpage()
+    grid::grid.draw(x$gtable)
+    dev.off()
+}
+
+
+```
+
+```{r write heatmaps to files}
+
+save_pheatmap_png(map_SigDN, "FIG3D.png")
+save_pheatmap_png(map_HSigDN, "FIG3E.png")
+
+
+```
